@@ -206,7 +206,7 @@ static int sts_mixer__find_free_voice(sts_mixer_t* mixer) {
   for (i = 0; i < STS_MIXER_VOICES; ++i) {
     if (mixer->voices[i].state == STS_MIXER_VOICE_STOPPED) return i;
   }
-  return 0;
+  return -1;
 }
 
 
