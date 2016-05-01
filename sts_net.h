@@ -42,7 +42,7 @@ typedef struct {
 #ifndef STS_NET_NO_PACKETS
   int   received;       // number of bytes currently received
   int   packet_length;  // the packet size which is requested (-1 if it is still receiving the first 2 bytes)
-  char  packet[STS_NET_PACKET_SIZE];  // buffer for the incoming packet
+  char  data[STS_NET_PACKET_SIZE];  // buffer for the incoming packet
 #endif // STS_NET_NO_PACKETS
 } sts_net_socket_t;
 
@@ -355,7 +355,7 @@ int sts_net_refill_packet_data(sts_net_socket_t* socket) {
 int sts_net_receive_packet(sts_net_socket_t* socket) {
   if (socket->packet_length < 0) {
     if (socket->received >= 2) {
-      socket->packet_length = socket->packet[0] * 256 + socket->packet[1];
+      socket->packet_length = socket->data[0] * 256 + socket->data[1];
       if (socket->packet_length > STS_NET_PACKET_SIZE) {
         sts_net_close_socket(socket);
         return sts_net__set_error("Received packet was too large");
