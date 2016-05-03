@@ -250,7 +250,7 @@ void sts_net_shutdown() {
 }
 
 
-int set_net_open_socket(sts_net_socket_t* sock, const char* host, const char* service) {
+int sts_net_open_socket(sts_net_socket_t* sock, const char* host, const char* service) {
   struct addrinfo     hints;
   struct addrinfo     *res = NULL, *r = NULL;
   int                 fd = INVALID_SOCKET;
@@ -305,7 +305,7 @@ int set_net_open_socket(sts_net_socket_t* sock, const char* host, const char* se
 
 
 void sts_net_close_socket(sts_net_socket_t* socket) {
-  if (socket->fd != INVALID_SOCKET) (socket->fd);
+  if (socket->fd != INVALID_SOCKET) closesocket(socket->fd);
   sts_net__reset_socket(socket);
 }
 
@@ -467,7 +467,7 @@ void sts_net_drop_packet(sts_net_socket_t* socket) {
 #include <stdio.h>
 
 #define STS_NET_IMPLEMENTATION
-#include "../sts_net.h"
+#include "sts_net.h"
 
 
 void panic(const char* msg) {
