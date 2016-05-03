@@ -25,18 +25,28 @@
 
 #ifndef STS_NET_SET_SOCKETS
 // define a bigger default if needed
+// this is the maximum amount of sockets you can keep in a socket set
 #define STS_NET_SET_SOCKETS   32
 #endif // STS_NET_SET_SOCKETS
 
 #ifndef STS_NET_BACKLOG
+// amount of waiting connections for a server socket
 #define STS_NET_BACKLOG       2
 #endif // STS_NET_BACKLOG
 
+#ifndef STS_NET_NO_PACKETS
 #ifndef STS_NET_PACKET_SIZE
+// the biggest possible size for a packet
+// note, that this size is already bigger then any MTU
 #define STS_NET_PACKET_SIZE   2048
 #endif // STS_NET_PACKET_SIZE
+#endif // STS_NET_NO_PACKETS
 
 
+////////////////////////////////////////////////////////////////////////////////
+//
+//    Structures
+//
 typedef struct {
   int   fd;             // socket file descriptor
   int   ready;          // flag if this socket is ready or not
@@ -54,35 +64,104 @@ typedef struct {
 } sts_net_set_t;
 
 
+// REMARK: all functions return 0 on success and -1 on error. You can get a more verbose error message
+// from sts_net_get_last_error
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//    General API
+//
+// Get the last error from sts_net (can be called even before sts_net_init)
 const char* sts_net_get_last_error();
 
+// Initialized the sts_net library. You have to call this before any other function (except sts_net_get_last_error)
 int sts_net_init();
 
+// Shutdown the sts_net library.
 void sts_net_shutdown();
 
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//    Low-Level Socket API
+//
+// Open a (TCP) socket. If you provide "host" sts_net will try to connect to a remove host.
+// Pass NULL for host and you'll have a server socket.
 int sts_net_open_socket(sts_net_socket_t* socket, const char* host, const char* service);
 
+// Closes the socket.
 void sts_net_close_socket(sts_net_socket_t* socket);
 
+// Try to accept a connection from the given server socket.
 int sts_net_accept_socket(sts_net_socket_t* listen_socket, sts_net_socket_t* remote_socket);
 
+// Send data to the socket.
 int sts_net_send(sts_net_socket_t* socket, void* data, int length);
 
+// Receive data from the socket.
+// NOTE: this call will block if the socket is not ready (meaning there's no data to receive).
 int sts_net_recv(sts_net_socket_t* socket, void* data, int length);
 
+// Initialized a socket set.
 void sts_net_init_socket_set(sts_net_set_t* set);
 
+// Add a socket to the socket set.
 int sts_net_add_socket_to_set(sts_net_socket_t* socket, sts_net_set_t* set);
 
+// Remove a socket from the socket set. You have to remove the socket from a set manually.
+// sts_net_close_socket WILL NOT DO THAT!
 int sts_net_remove_socket_from_set(sts_net_socket_t* socket, sts_net_set_t* set);
 
+// Checks for activity on all sockets in the given socket set. If you want to peek for events
+// pass 0.0f to the timeout.
+// All sockets will have set the ready property to non-zero if you can read data from it,
+// or can accept connections.
+//  returns:
+//    -1  on errors
+//     0  if there was no activity
+//    >0  amount of sockets with activity
 int sts_net_check_socket_set(sts_net_set_t* set, const float timeout);
 
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//   Packet API
+//
+//  Packets are an "high-level" approach to sending and receiving data.
+//  sts_net will prefix every packet with two bytes to indicate the size of the incoming data.
+//  You should create a socket set add the desired sockets to the set and call sts_net_check_socket_set regurarely.
+//
+//  sts_net_socket_set_t  client_set;
+//  sts_net_socket_t      clients[NUM_CLIENTS];
+//
+//  ... some code here...
+//
+//  if (sts_net_check_socket_set(client_set, 0.0f) > 0) {
+//    for (i = 0; i < NUM_CLIENTS; ++i) {
+//      if (sts_net_refill_packet_data(clients[i]) < 0) {
+//        ...error handling...
+//      }
+//      while (sts_net_receive_packet(clients[i]) {
+//        ...use clients[i].data and clients[i].packet_length...
+//        sts_net_drop_packet(clients[i]) // drop packet data
+//      }
+//    }
+//  }
+//
 #ifndef STS_NET_NO_PACKETS
+// try to "refill" the internal packet buffer with data
+// note that the socket has to be "ready" so use it in conjunction with a socket set
+// returns:
+//  -1  on errors
+//   0  if there was no data
+//   1  added some bytes of new packet data
 int sts_net_refill_packet_data(sts_net_socket_t* socket);
 
+// tries to "decode" the next packet in the stream
+// returns 0 when there's no packet read, non-zero if you can use socket->data and socket->packet_length
 int sts_net_receive_packet(sts_net_socket_t* socket);
 
+// drops the packet after you used it
 void sts_net_drop_packet(sts_net_socket_t* socket);
 #endif // STS_NET_NO_PACKETS
 #endif // __INCLUDED__STS_NET_H__
@@ -287,7 +366,7 @@ int sts_net_add_socket_to_set(sts_net_socket_t *socket, sts_net_set_t *set) {
   for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
     if (!set->sockets[i]) {
       set->sockets[i] = socket;
-      return 1;
+      return 0;
     }
   }
   return sts_net__set_error("Socket set is full");
@@ -299,7 +378,7 @@ int sts_net_remove_socket_from_set(sts_net_socket_t *socket, sts_net_set_t *set)
   for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
     if (set->sockets[i] == socket) {
       set->sockets[i] = NULL;
-      return 1;
+      return 0;
     }
   }
   return sts_net__set_error("Socket not found in set");
