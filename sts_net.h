@@ -64,8 +64,9 @@ typedef struct {
 } sts_net_set_t;
 
 
-// REMARK: all functions return 0 on success and -1 on error. You can get a more verbose error message
-// from sts_net_get_last_error
+// REMARK: most functions return 0 on success and -1 on error. You can get a more verbose error message
+// from sts_net_get_last_error. Functions which behave differently are the sts_net packet api and sts_net_check_socket_set.
+
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -165,6 +166,7 @@ int sts_net_receive_packet(sts_net_socket_t* socket);
 void sts_net_drop_packet(sts_net_socket_t* socket);
 #endif // STS_NET_NO_PACKETS
 #endif // __INCLUDED__STS_NET_H__
+
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
