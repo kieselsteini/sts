@@ -4,6 +4,7 @@
  written 2016 by Sebastian Steinhauer
 
   VERSION HISTORY
+    0.03 (2016-05-04) fixed timeout in sts_net_check_socket_set
     0.02 (2016-05-03) fixed sts_net_open_socket to work without warnings in Windows
                       removed sts_net_resolve_host and sts_net_address_t
     0.01 (2016-05-01) initial version
@@ -404,7 +405,7 @@ int sts_net_check_socket_set(sts_net_set_t* set, const float timeout) {
   }
 
   tv.tv_sec = (int)timeout;
-  tv.tv_usec = (int)(timeout * 1000000.0f);
+  tv.tv_usec = (int)((timeout - (float)tv.tv_sec) * 1000000.0f);
   result = select(max_fd + 1, &fds, NULL, NULL, &tv);
   if (result > 0) {
     for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
