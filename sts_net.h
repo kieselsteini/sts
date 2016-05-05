@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 /*
- sts_net.h - v0.01 - public domain
+ sts_net.h - v0.03 - public domain
  written 2016 by Sebastian Steinhauer
 
   VERSION HISTORY
