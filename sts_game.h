@@ -3,6 +3,9 @@
  sts_game.h - v0.01 - public domain
  written 2016 by Sebastian Steinhauer
 
+  --== ATTENTION ==--
+    This is very work in progress here!
+
   VERSION HISTORY
     0.01 (2016-05-05) initial version
 
@@ -18,9 +21,6 @@
     stb_vorbis
     sts_mixer
     sts_net
-
-  REMARKS
-    The packet API is still work in progress.
 
 */
 ////////////////////////////////////////////////////////////////////////////////
