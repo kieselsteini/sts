@@ -1,9 +1,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 /*
- sts_net.h - v0.03 - public domain
+ sts_net.h - v0.04 - public domain
  written 2016 by Sebastian Steinhauer
 
   VERSION HISTORY
+    0.04 (2016-05-20) made sts_net_reset_socket public
     0.03 (2016-05-04) fixed timeout in sts_net_check_socket_set
     0.02 (2016-05-03) fixed sts_net_open_socket to work without warnings in Windows
                       removed sts_net_resolve_host and sts_net_address_t
@@ -87,6 +88,10 @@ void sts_net_shutdown();
 //
 //    Low-Level Socket API
 //
+// Reset a socket (clears the structure).
+// THIS WILL NOT CLOSE the socket. It's ment to "clear" the socket structure.
+void sts_net_reset_socket(sts_net_socket_t* socket);
+
 // Open a (TCP) socket. If you provide "host" sts_net will try to connect to a remove host.
 // Pass NULL for host and you'll have a server socket.
 int sts_net_open_socket(sts_net_socket_t* socket, const char* host, const char* service);
@@ -215,7 +220,7 @@ static int sts_net__set_error(const char* message) {
 }
 
 
-static void sts_net__reset_socket(sts_net_socket_t* socket) {
+void sts_net_reset_socket(sts_net_socket_t* socket) {
   socket->fd = INVALID_SOCKET;
   socket->ready = 0;
   socket->server = 0;
@@ -256,7 +261,7 @@ int sts_net_open_socket(sts_net_socket_t* sock, const char* host, const char* se
   struct addrinfo     *res = NULL, *r = NULL;
   int                 fd = INVALID_SOCKET;
 
-  sts_net__reset_socket(sock);
+  sts_net_reset_socket(sock);
   sts__memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
@@ -307,7 +312,7 @@ int sts_net_open_socket(sts_net_socket_t* sock, const char* host, const char* se
 
 void sts_net_close_socket(sts_net_socket_t* socket) {
   if (socket->fd != INVALID_SOCKET) closesocket(socket->fd);
-  sts_net__reset_socket(socket);
+  sts_net_reset_socket(socket);
 }
 
 
