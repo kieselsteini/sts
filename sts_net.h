@@ -4,6 +4,8 @@
  written 2016 by Sebastian Steinhauer
 
   VERSION HISTORY
+    0.05 (2017-01-12) added sts_net_is_socket_valid()
+                      changed sts_net_send() to const data
     0.04 (2016-05-20) made sts_net_reset_socket public
     0.03 (2016-05-04) fixed timeout in sts_net_check_socket_set
     0.02 (2016-05-03) fixed sts_net_open_socket to work without warnings in Windows
@@ -92,6 +94,9 @@ void sts_net_shutdown();
 // THIS WILL NOT CLOSE the socket. It's ment to "clear" the socket structure.
 void sts_net_reset_socket(sts_net_socket_t* socket);
 
+// Check if the socket structure contains a "valid" socket.
+int sts_net_is_socket_valid(sts_net_socket_t* socket);
+
 // Open a (TCP) socket. If you provide "host" sts_net will try to connect to a remove host.
 // Pass NULL for host and you'll have a server socket.
 int sts_net_open_socket(sts_net_socket_t* socket, const char* host, const char* service);
@@ -103,7 +108,7 @@ void sts_net_close_socket(sts_net_socket_t* socket);
 int sts_net_accept_socket(sts_net_socket_t* listen_socket, sts_net_socket_t* remote_socket);
 
 // Send data to the socket.
-int sts_net_send(sts_net_socket_t* socket, void* data, int length);
+int sts_net_send(sts_net_socket_t* socket, const void* data, int length);
 
 // Receive data from the socket.
 // NOTE: this call will block if the socket is not ready (meaning there's no data to receive).
@@ -231,6 +236,11 @@ void sts_net_reset_socket(sts_net_socket_t* socket) {
 }
 
 
+int sts_net_is_socket_valid(sts_net_socket_t* socket) {
+  return socket->fd != INVALID_SOCKET;
+}
+
+
 const char *sts_net_get_last_error() {
   return sts_net__error_message;
 }
@@ -336,7 +346,7 @@ int sts_net_accept_socket(sts_net_socket_t* listen_socket, sts_net_socket_t* rem
 }
 
 
-int sts_net_send(sts_net_socket_t* socket, void* data, int length) {
+int sts_net_send(sts_net_socket_t* socket, const void* data, int length) {
   if (socket->server) {
     return sts_net__set_error("Cannot send on server socket");
   }
