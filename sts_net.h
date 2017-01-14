@@ -4,6 +4,7 @@
  written 2016 by Sebastian Steinhauer
 
   VERSION HISTORY
+    0.06 (2017-01-14) fixed warnings when compiling on Windows 64-bit
     0.05 (2017-01-12) added sts_net_is_socket_valid()
                       changed sts_net_send() to const data
     0.04 (2016-05-20) made sts_net_reset_socket public
@@ -185,6 +186,12 @@ void sts_net_drop_packet(sts_net_socket_t* socket);
 ////    IMPLEMENTATION
 ////
 ////
+
+//// On Windows 64-bit, almost all socket functions use the type SOCKET
+//// to operate, but it's safe to cast it down to int, because handles
+//// can't get bigger then 2^24 on Windows...so I don't know why SOCKET is 2^64 ;)
+//// https://msdn.microsoft.com/en-us/library/ms724485(VS.85).aspx
+
 #ifdef STS_NET_IMPLEMENTATION
 
 #include <string.h>   // NULL and possibly memcpy, memset
@@ -280,9 +287,9 @@ int sts_net_open_socket(sts_net_socket_t* sock, const char* host, const char* se
     // try to connect to remote host
     if (getaddrinfo(host, service, &hints, &res) != 0) return sts_net__set_error("Cannot resolve hostname");
     for (r = res; r; r = r->ai_next) {
-      fd = socket(r->ai_family, r->ai_socktype, r->ai_protocol);
+      fd = (int)socket(r->ai_family, r->ai_socktype, r->ai_protocol);
       if (fd == INVALID_SOCKET) continue;
-      if (connect(fd, r->ai_addr, r->ai_addrlen) == 0) break;
+      if (connect(fd, r->ai_addr, (int)r->ai_addrlen) == 0) break;
       closesocket(fd);
     }
     freeaddrinfo(res);
@@ -292,7 +299,7 @@ int sts_net_open_socket(sts_net_socket_t* sock, const char* host, const char* se
     // listen for connection (start server)
     hints.ai_flags = AI_PASSIVE;
     if (getaddrinfo(NULL, service, &hints, &res) != 0) return sts_net__set_error("Cannot resolve hostname");
-    fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    fd = (int)socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd == INVALID_SOCKET) {
       freeaddrinfo(res);
       return sts_net__set_error("Could not create socket");
@@ -338,7 +345,7 @@ int sts_net_accept_socket(sts_net_socket_t* listen_socket, sts_net_socket_t* rem
   listen_socket->ready = 0;
   remote_socket->ready = 0;
   remote_socket->server = 0;
-  remote_socket->fd = accept(listen_socket->fd, (struct sockaddr*)&sock_addr, &sock_alen);
+  remote_socket->fd = (int)accept(listen_socket->fd, (struct sockaddr*)&sock_addr, &sock_alen);
   if (remote_socket->fd == INVALID_SOCKET) {
     return sts_net__set_error("Accept failed");
   }
