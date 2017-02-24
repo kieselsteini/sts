@@ -4,6 +4,8 @@
  written 2016 by Sebastian Steinhauer
 
   VERSION HISTORY
+    0.07 (2017-02-24) added checks for a valid socket in every function
+                      return 0 for an empty socket set
     0.06 (2017-01-14) fixed warnings when compiling on Windows 64-bit
     0.05 (2017-01-12) added sts_net_is_socket_valid()
                       changed sts_net_send() to const data
@@ -340,6 +342,9 @@ int sts_net_accept_socket(sts_net_socket_t* listen_socket, sts_net_socket_t* rem
   if (!listen_socket->server) {
     return sts_net__set_error("Cannot accept on client socket");
   }
+  if (listen_socket->fd == INVALID_SOCKET) {
+    return sts_net__set_error("Cannot accept on closed socket");
+  }
 
   sock_alen = sizeof(sock_addr);
   listen_socket->ready = 0;
@@ -357,6 +362,9 @@ int sts_net_send(sts_net_socket_t* socket, const void* data, int length) {
   if (socket->server) {
     return sts_net__set_error("Cannot send on server socket");
   }
+  if (socket->fd == INVALID_SOCKET) {
+    return sts_net__set_error("Cannot send on closed socket");
+  }
   if (send(socket->fd, (const char*)data, length, 0) != length) {
     return sts_net__set_error("Cannot send data");
   }
@@ -368,6 +376,9 @@ int sts_net_recv(sts_net_socket_t* socket, void* data, int length) {
   int result;
   if (socket->server) {
     return sts_net__set_error("Cannot receive on server socket");
+  }
+  if (socket->fd == INVALID_SOCKET) {
+    return sts_net__set_error("Cannot receive on closed socket");
   }
   socket->ready = 0;
   result = recv(socket->fd, (char*)data, length, 0);
@@ -388,6 +399,9 @@ void sts_net_init_socket_set(sts_net_set_t* set) {
 
 int sts_net_add_socket_to_set(sts_net_socket_t *socket, sts_net_set_t *set) {
   int i;
+  if (socket->fd == INVALID_SOCKET) {
+    return sts_net__set_error("Cannot add closed socket to set");
+  }
   for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
     if (!set->sockets[i]) {
       set->sockets[i] = socket;
@@ -400,6 +414,9 @@ int sts_net_add_socket_to_set(sts_net_socket_t *socket, sts_net_set_t *set) {
 
 int sts_net_remove_socket_from_set(sts_net_socket_t *socket, sts_net_set_t *set) {
   int i;
+  if (socket->fd == INVALID_SOCKET) {
+    return sts_net__set_error("Cannot remove closed socket from set");
+  }
   for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
     if (set->sockets[i] == socket) {
       set->sockets[i] = NULL;
@@ -425,6 +442,7 @@ int sts_net_check_socket_set(sts_net_set_t* set, const float timeout) {
       }
     }
   }
+  if (max_fd == 0) return 0;
 
   tv.tv_sec = (int)timeout;
   tv.tv_usec = (int)((timeout - (float)tv.tv_sec) * 1000000.0f);
