@@ -1,7 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 /*
- sts_net.h - v0.04 - public domain
- written 2016 by Sebastian Steinhauer
+ sts_net.h - v0.07 - public domain
+ written 2017 by Sebastian Steinhauer
 
   VERSION HISTORY
     0.07 (2017-02-24) added checks for a valid socket in every function
