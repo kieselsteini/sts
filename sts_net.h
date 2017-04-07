@@ -145,6 +145,9 @@ sts_net_socket_t* sts_net_get_available_socket_from_set(sts_net_set_t* set);
 //    >0  amount of sockets with activity
 int sts_net_check_socket_set(sts_net_set_t* set, const float timeout);
 
+// Check for activity on a single socket. Parameters and return value see above.
+int sts_net_check_socket(sts_net_socket_t* socket, const float timeout);
+
 // Read the connected hostname of a socket into out buffer
 // Supply 1 to want_only_ip if instead of the resolved host name only the ip address is needed
 // out_port can be supplied as NULL if you're not interested in the connected port number
@@ -531,6 +534,34 @@ int sts_net_check_socket_set(sts_net_set_t* set, const float timeout) {
   } else if (result == SOCKET_ERROR) {
     sts_net__set_error("Error on select()");
       }
+  return result;
+}
+
+
+int sts_net_check_socket(sts_net_socket_t* socket, const float timeout) {
+  fd_set          fds;
+  struct timeval  tv;
+  int             result;
+
+  if (socket->fd == INVALID_SOCKET) {
+    return sts_net__set_error("Cannot check a closed socket");
+  }
+
+  FD_ZERO(&fds);
+  #ifdef _WIN32
+  FD_SET((SOCKET)socket->fd, &fds);
+  #else
+  FD_SET(socket->fd, &fds);
+  #endif
+
+  tv.tv_sec = (int)timeout;
+  tv.tv_usec = (int)((timeout - (float)tv.tv_sec) * 1000000.0f);
+  result = select(socket->fd + 1, &fds, NULL, NULL, &tv);
+  if (result > 0) {
+      socket->ready = 1;
+  } else if (result == SOCKET_ERROR) {
+    sts_net__set_error("Error on select()");
+  }
   return result;
 }
 
