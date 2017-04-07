@@ -210,6 +210,7 @@ void sts_net_drop_packet(sts_net_socket_t* socket);
 #include <string.h>   // NULL and possibly memcpy, memset
 
 #ifdef _WIN32
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <WinSock2.h>
 #include <Ws2tcpip.h>
 typedef int socklen_t;
