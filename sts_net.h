@@ -82,8 +82,11 @@ typedef struct {
 //
 //    General API
 //
+
+#ifndef STS_NET_NO_ERRORSTRINGS
 // Get the last error from sts_net (can be called even before sts_net_init)
 const char* sts_net_get_last_error();
+#endif
 
 // Initialized the sts_net library. You have to call this before any other function (except sts_net_get_last_error)
 int sts_net_init();
@@ -233,6 +236,7 @@ typedef int socklen_t;
 #endif // sts__memset
 
 
+#ifndef STS_NET_NO_ERRORSTRINGS
 static const char* sts_net__error_message = "";
 
 
@@ -240,6 +244,14 @@ static int sts_net__set_error(const char* message) {
   sts_net__error_message = message;
   return -1;
 }
+
+
+const char *sts_net_get_last_error() {
+  return sts_net__error_message;
+}
+#else
+#define sts_net__set_error(m) -1
+#endif
 
 
 void sts_net_reset_socket(sts_net_socket_t* socket) {
@@ -255,11 +267,6 @@ void sts_net_reset_socket(sts_net_socket_t* socket) {
 
 int sts_net_is_socket_valid(sts_net_socket_t* socket) {
   return socket->fd != INVALID_SOCKET;
-}
-
-
-const char *sts_net_get_last_error() {
-  return sts_net__error_message;
 }
 
 
