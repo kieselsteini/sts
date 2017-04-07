@@ -70,7 +70,7 @@ typedef struct {
 
 
 typedef struct {
-  sts_net_socket_t* sockets[STS_NET_SET_SOCKETS];
+  sts_net_socket_t sockets[STS_NET_SET_SOCKETS];
 } sts_net_set_t;
 
 
@@ -106,15 +106,21 @@ void sts_net_reset_socket(sts_net_socket_t* socket);
 // Check if the socket structure contains a "valid" socket.
 int sts_net_is_socket_valid(sts_net_socket_t* socket);
 
-// Open a (TCP) socket. If you provide "host" sts_net will try to connect to a remove host.
-// Pass NULL for host and you'll have a server socket.
-int sts_net_open_socket(sts_net_socket_t* socket, const char* host, const char* service);
+// Open a (TCP) client socket
+int sts_net_connect(sts_net_socket_t* socket, const char* host, int port);
+
+// Open a (TCP) server socket
+// Supply NULL as bind_host to listen on any address
+int sts_net_listen(sts_net_socket_t* socket, int port, const char* bind_address);
 
 // Closes the socket.
 void sts_net_close_socket(sts_net_socket_t* socket);
 
 // Try to accept a connection from the given server socket.
 int sts_net_accept_socket(sts_net_socket_t* listen_socket, sts_net_socket_t* remote_socket);
+
+// Instead of accept, drop an incoming connection from the given server socket
+int sts_net_drop_socket(sts_net_socket_t* listen_socket);
 
 // Send data to the socket.
 int sts_net_send(sts_net_socket_t* socket, const void* data, int length);
@@ -126,12 +132,8 @@ int sts_net_recv(sts_net_socket_t* socket, void* data, int length);
 // Initialized a socket set.
 void sts_net_init_socket_set(sts_net_set_t* set);
 
-// Add a socket to the socket set.
-int sts_net_add_socket_to_set(sts_net_socket_t* socket, sts_net_set_t* set);
-
-// Remove a socket from the socket set. You have to remove the socket from a set manually.
-// sts_net_close_socket WILL NOT DO THAT!
-int sts_net_remove_socket_from_set(sts_net_socket_t* socket, sts_net_set_t* set);
+// Get an available socket from the set (returns NULL if none available)
+sts_net_socket_t* sts_net_get_available_socket_from_set(sts_net_set_t* set);
 
 // Checks for activity on all sockets in the given socket set. If you want to peek for events
 // pass 0.0f to the timeout.
@@ -316,56 +318,76 @@ void sts_net_shutdown() {
 }
 
 
-int sts_net_open_socket(sts_net_socket_t* sock, const char* host, const char* service) {
-  struct addrinfo     hints;
-  struct addrinfo     *res = NULL, *r = NULL;
+static int sts_net__resolvehost(struct sockaddr_in* sin, const char* host, int port) {
+  sts__memset(sin, 0, sizeof(struct sockaddr_in));
+  sin->sin_family = AF_INET;
+  sin->sin_port = htons(port);
+  sin->sin_addr.s_addr = (host ? inet_addr(host) : INADDR_ANY);
+  if (sin->sin_addr.s_addr == INADDR_NONE) {
+      struct hostent *hostent = gethostbyname(host);
+      if (hostent)
+          sts__memcpy(&sin->sin_addr.s_addr, hostent->h_addr, hostent->h_length);
+      else
+          return -1;
+  }
+  return 0;
+}
+
+
+int sts_net_connect(sts_net_socket_t* sock, const char* host, int port) {
   int                 fd = INVALID_SOCKET;
+  struct sockaddr_in sin;
 
   sts_net_reset_socket(sock);
-  sts__memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
 
-  if (host != NULL) {
+  if (sts_net__resolvehost(&sin, host, port)) {
+    return sts_net__set_error("Cannot resolve hostname");
+  }
+
     // try to connect to remote host
-    if (getaddrinfo(host, service, &hints, &res) != 0) return sts_net__set_error("Cannot resolve hostname");
-    for (r = res; r; r = r->ai_next) {
-      fd = (int)socket(r->ai_family, r->ai_socktype, r->ai_protocol);
-      if (fd == INVALID_SOCKET) continue;
-      if (connect(fd, r->ai_addr, (int)r->ai_addrlen) == 0) break;
-      closesocket(fd);
+  fd = (int)socket(PF_INET, SOCK_STREAM, 0);
+  if (connect(fd, (const struct sockaddr *)&sin, sizeof(sin))) {
+    return sts_net__set_error("Could not create socket");
     }
-    freeaddrinfo(res);
-    if (!r) return sts_net__set_error("Cannot connect to host");
+
     sock->fd = fd;
-  } else {
+  return 0;
+}
+
+
+int sts_net_listen(sts_net_socket_t* sock, int port, const char* bind_address) {
+  int fd = INVALID_SOCKET;
+  struct sockaddr_in sin;
+
+  sts_net_reset_socket(sock);
+
     // listen for connection (start server)
-    hints.ai_flags = AI_PASSIVE;
-    if (getaddrinfo(NULL, service, &hints, &res) != 0) return sts_net__set_error("Cannot resolve hostname");
-    fd = (int)socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+  fd = (int)socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (fd == INVALID_SOCKET) {
-      freeaddrinfo(res);
       return sts_net__set_error("Could not create socket");
     }
+
 #ifndef _WIN32
     {
       int yes = 1;
       setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char*)&yes, sizeof(yes));
     }
 #endif // _WIN32
-    if (bind(fd, res->ai_addr, (int)res->ai_addrlen) == SOCKET_ERROR) {
-      freeaddrinfo(res);
+  
+  if (sts_net__resolvehost(&sin, bind_address, port)) {
+    return sts_net__set_error("Cannot resolve bind address");
+  }
+
+  if (bind(fd, (struct sockaddr*)&sin, sizeof(sin)) == SOCKET_ERROR) {
       closesocket(fd);
       return sts_net__set_error("Could not bind to port");
     }
-    freeaddrinfo(res);
     if (listen(fd, STS_NET_BACKLOG) == SOCKET_ERROR) {
       closesocket(fd);
       return sts_net__set_error("Could not listen to socket");
     }
     sock->server = 1;
     sock->fd = fd;
-  }
   return 0;
 }
 
@@ -395,6 +417,29 @@ int sts_net_accept_socket(sts_net_socket_t* listen_socket, sts_net_socket_t* rem
   if (remote_socket->fd == INVALID_SOCKET) {
     return sts_net__set_error("Accept failed");
   }
+  return 0;
+}
+
+
+int sts_net_drop_socket(sts_net_socket_t* listen_socket) {
+  int fd;
+  struct sockaddr_in  sock_addr;
+  socklen_t           sock_alen;
+
+  if (!listen_socket->server) {
+    return sts_net__set_error("Cannot drop incoming connection on client socket");
+  }
+  if (listen_socket->fd == INVALID_SOCKET) {
+    return sts_net__set_error("Cannot drop incoming connection on closed socket");
+  }
+
+  sock_alen = sizeof(sock_addr);
+  listen_socket->ready = 0;
+  fd = (int)accept(listen_socket->fd, (struct sockaddr*)&sock_addr, &sock_alen);
+  if (fd == INVALID_SOCKET) {
+    return sts_net__set_error("Accept failed");
+  }
+  closesocket(fd);
   return 0;
 }
 
@@ -433,38 +478,19 @@ int sts_net_recv(sts_net_socket_t* socket, void* data, int length) {
 void sts_net_init_socket_set(sts_net_set_t* set) {
   int i;
   for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
-    set->sockets[i] = NULL;
+    set->sockets[i].ready = 0;
+    set->sockets[i].fd = INVALID_SOCKET;
   }
 }
 
 
-int sts_net_add_socket_to_set(sts_net_socket_t *socket, sts_net_set_t *set) {
+sts_net_socket_t* sts_net_get_available_socket_from_set(sts_net_set_t* set) {
   int i;
-  if (socket->fd == INVALID_SOCKET) {
-    return sts_net__set_error("Cannot add closed socket to set");
-  }
   for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
-    if (!set->sockets[i]) {
-      set->sockets[i] = socket;
-      return 0;
-    }
+    if (set->sockets[i].fd == INVALID_SOCKET)
+      return &set->sockets[i];
   }
-  return sts_net__set_error("Socket set is full");
-}
-
-
-int sts_net_remove_socket_from_set(sts_net_socket_t *socket, sts_net_set_t *set) {
-  int i;
-  if (socket->fd == INVALID_SOCKET) {
-    return sts_net__set_error("Cannot remove closed socket from set");
-  }
-  for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
-    if (set->sockets[i] == socket) {
-      set->sockets[i] = NULL;
-      return 0;
-    }
-  }
-  return sts_net__set_error("Socket not found in set");
+  return NULL;
 }
 
 
@@ -473,13 +499,19 @@ int sts_net_check_socket_set(sts_net_set_t* set, const float timeout) {
   struct timeval  tv;
   int             i, max_fd, result;
 
+  //static assertion to make sure STS_NET_SET_SOCKETS fits into FD_SETSIZE
+  typedef char static_assert_set_size_too_large[(STS_NET_SET_SOCKETS <= FD_SETSIZE)?1:-1];
 
   FD_ZERO(&fds);
   for (i = 0, max_fd = 0; i < STS_NET_SET_SOCKETS; ++i) {
-    if (set->sockets[i]) {
-      FD_SET(set->sockets[i]->fd, &fds);
-      if (set->sockets[i]->fd > max_fd) {
-        max_fd = set->sockets[i]->fd;
+    if (set->sockets[i].fd != INVALID_SOCKET) {
+      #ifdef _WIN32
+      FD_SET((SOCKET)set->sockets[i].fd, &fds);
+      #else
+      FD_SET(set->sockets[i].fd, &fds);
+      #endif
+      if (set->sockets[i].fd > max_fd) {
+        max_fd = set->sockets[i].fd;
       }
     }
   }
@@ -490,15 +522,15 @@ int sts_net_check_socket_set(sts_net_set_t* set, const float timeout) {
   result = select(max_fd + 1, &fds, NULL, NULL, &tv);
   if (result > 0) {
     for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
-      if (set->sockets[i]) {
-        if (FD_ISSET(set->sockets[i]->fd, &fds)) {
-          set->sockets[i]->ready = 1;
+      if (set->sockets[i].fd != INVALID_SOCKET) {
+        if (FD_ISSET(set->sockets[i].fd, &fds)) {
+          set->sockets[i].ready = 1;
         }
       }
-    }
+        }
   } else if (result == SOCKET_ERROR) {
     sts_net__set_error("Error on select()");
-  }
+      }
   return result;
 }
 
@@ -654,52 +686,46 @@ void panic(const char* msg) {
 int main(int argc, char *argv[]) {
   int               i, j, bytes;
   sts_net_set_t     set;
-  sts_net_socket_t  server;
-  sts_net_socket_t  clients[STS_NET_SET_SOCKETS];
+  sts_net_socket_t *server, *client;
   char              buffer[256];
 
   (void)(argc);
   (void)(argv);
 
-  for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
-    clients[i].ready = 0;
-    clients[i].fd = INVALID_SOCKET;
-  }
-
   sts_net_init();
-  if (sts_net_open_socket(&server, NULL, "4040") < 0) panic(sts_net_get_last_error());
   sts_net_init_socket_set(&set);
-  if (sts_net_add_socket_to_set(&server, &set) < 0) panic(sts_net_get_last_error());
+  server = &set.sockets[0];
+  if (sts_net_listen(server, 4040, NULL) < 0) panic(sts_net_get_last_error());
 
   while(1) {
     puts("Waiting...");
     if (sts_net_check_socket_set(&set, 0.5) < 0) panic(sts_net_get_last_error());
     // check server
-    if (server.ready) {
-      for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
-        if (clients[i].fd == INVALID_SOCKET) {
-          if (sts_net_accept_socket(&server, &clients[i]) < 0) panic(sts_net_get_last_error());
-          if (sts_net_add_socket_to_set(&clients[i], &set) < 0) panic(sts_net_get_last_error());
-          sts_net_gethostname(&clients[i], buffer, sizeof(buffer), 1, NULL);
+    if (server->ready) {
+      client = sts_net_get_available_socket_from_set(&set);
+      if (client) {
+          if (sts_net_accept_socket(server, client) < 0) panic(sts_net_get_last_error());
+          sts_net_gethostname(client, buffer, sizeof(buffer), 1, NULL);
           printf("Client connected '%s'!\n", buffer);
-          break;
         }
+      else {
+          sts_net_drop_socket(server);
+          puts("Connection set full, client dropped");
       }
     }
     // check clients
     for (i = 0; i < STS_NET_SET_SOCKETS; ++i) {
-      if (clients[i].ready) {
+      if (set.sockets[i].ready) {
         memset(buffer, 0, sizeof(buffer));
-        bytes = sts_net_recv(&clients[i], buffer, sizeof(buffer) - 1);
+        bytes = sts_net_recv(&set.sockets[i], buffer, sizeof(buffer) - 1);
         if (bytes <= 0) {
-          if (sts_net_remove_socket_from_set(&clients[i], &set) < 0) panic(sts_net_get_last_error());
-          sts_net_close_socket(&clients[i]);
+          sts_net_close_socket(&set.sockets[i]);
           puts("Client disconnected");
         } else {
           // broadcast
           for (j = 0; j < STS_NET_SET_SOCKETS; ++j) {
-            if (clients[j].fd != INVALID_SOCKET) {
-              if (sts_net_send(&clients[j], buffer, bytes) < 0) panic(sts_net_get_last_error());
+            if (set.sockets[j].fd != INVALID_SOCKET && set.sockets[j].server == 0) {
+              if (sts_net_send(&set.sockets[j], buffer, bytes) < 0) panic(sts_net_get_last_error());
             }
           }
           printf("Broadcast: %s\n", buffer);
