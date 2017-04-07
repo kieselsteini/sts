@@ -515,7 +515,7 @@ int sts_net_gethostname(sts_net_socket_t* socket, char* out_host, int out_size, 
   if (addrLen >= out_size) {
     return sts_net__set_error("Provided buffer is too small for host name");
   }
-  memcpy(out_host, host, addrLen + 1);
+  sts__memcpy(out_host, host, addrLen + 1);
   return addrLen;
 }
 
