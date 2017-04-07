@@ -149,6 +149,18 @@ int sts_net_check_socket_set(sts_net_set_t* set, const float timeout);
 // Returns the length of what was written into out_host or -1 on error (sets out_host empty string)
 int sts_net_gethostname(sts_net_socket_t* socket, char* out_host, int out_size, int want_only_ip, int* out_port);
 
+#ifndef STS_NET_NO_ENUMERATEINTERFACES
+typedef struct {
+  char interface_name[48], address[47], IsIPV6;
+} sts_net_interfaceinfo_t;
+
+// Get a list of interface names and ip-addresses of the host machine
+// The supplied table needs to be allocated memory of size tablesize * sizeof(sts_net_interfaceinfo_t)
+// Boolean parametrs want_ipv4 and want_ipv6 can be set to 0 or 1
+// The function returns the max number of table entries (can be more than tablesize)
+// You can supply NULL as table and 0 as tablesize to query for the count of entries.
+int sts_net_enumerate_interfaces(sts_net_interfaceinfo_t* table, int tablesize, int want_ipv4, int want_ipv6);
+#endif // STS_NET_NO_ENUMERATEINTERFACES
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -221,6 +233,10 @@ void sts_net_drop_packet(sts_net_socket_t* socket);
 #include <Ws2tcpip.h>
 typedef int socklen_t;
 #pragma comment(lib, "Ws2_32.lib")
+#ifndef STS_NET_NO_ENUMERATEINTERFACES
+#include <iphlpapi.h>
+#pragma comment(lib, "iphlpapi.lib")
+#endif
 #else
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -232,6 +248,9 @@ typedef int socklen_t;
 #define INVALID_SOCKET    -1
 #define SOCKET_ERROR      -1
 #define closesocket(fd)   close(fd)
+#ifndef STS_NET_NO_ENUMERATEINTERFACES
+#include <ifaddrs.h>
+#endif
 #endif
 
 
@@ -519,6 +538,62 @@ int sts_net_gethostname(sts_net_socket_t* socket, char* out_host, int out_size, 
   return addrLen;
 }
 
+#ifndef STS_NET_NO_ENUMERATEINTERFACES
+int sts_net_enumerate_interfaces(sts_net_interfaceinfo_t* table, int tablesize, int want_ipv4, int want_ipv6) {
+  void* sinaddr;
+  struct sockaddr* addr;
+  int family, ifnamelen, totalcount = 0;
+
+#if _WIN32
+  DWORD size;
+  PIP_ADAPTER_ADDRESSES adapter_addresses, aa;
+  PIP_ADAPTER_UNICAST_ADDRESS ua;
+
+  if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, NULL, NULL, &size) != ERROR_BUFFER_OVERFLOW || !size) return 0;
+  adapter_addresses = (PIP_ADAPTER_ADDRESSES)HeapAlloc(GetProcessHeap(), 0, size);
+  if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, NULL, adapter_addresses, &size) != ERROR_SUCCESS) { free(adapter_addresses); return 0; }
+
+  for (aa = adapter_addresses; aa; aa = aa->Next) {
+    if (aa->OperStatus != IfOperStatusUp) continue;
+    for (ua = aa->FirstUnicastAddress; ua; ua = ua->Next) {
+      addr = ua->Address.lpSockaddr;
+#else
+  struct ifaddrs *ifAddrStruct, *ifa;
+  getifaddrs(&ifAddrStruct);
+  for (ifa = ifAddrStruct; ifa; ifa = ifa->ifa_next) {
+    if (ifa->ifa_addr) {
+      addr = ifa->ifa_addr;
+#endif
+      family = addr->sa_family;
+      if      (family == AF_INET)  { if (!want_ipv4) continue; }
+      else if (family == AF_INET6) { if (!want_ipv6) continue; }
+      else continue;
+      totalcount++;
+      if (!tablesize) continue;
+      if (family == AF_INET) { sinaddr = &((struct sockaddr_in*)addr)->sin_addr;   table->IsIPV6 = 0; }
+      else                   { sinaddr = &((struct sockaddr_in6*)addr)->sin6_addr; table->IsIPV6 = 1; }
+#if _WIN32
+      ifnamelen = WideCharToMultiByte(CP_UTF8, 0, aa->FriendlyName, -1, table->interface_name, sizeof(table->interface_name) - 1, 0, 0);
+      if (!ifnamelen) ifnamelen = sizeof(table->interface_name) - 1;
+#else
+      ifnamelen = strlen(ifa->ifa_name);
+      if (ifnamelen >= sizeof(table->interface_name)) ifnamelen = sizeof(table->interface_name) - 1;
+      sts__memcpy(table->interface_name, ifa->ifa_name, ifnamelen);
+#endif
+      table->interface_name[ifnamelen] = '\0';
+      inet_ntop(family, sinaddr, table->address, sizeof(table->address));
+      tablesize--;
+      table++;
+    }
+  }
+#if _WIN32
+  HeapFree(GetProcessHeap(), 0, adapter_addresses);
+#else
+  if (ifAddrStruct != NULL) freeifaddrs(ifAddrStruct);
+#endif
+  return totalcount;
+}
+#endif // STS_NET_NO_ENUMERATEINTERFACES
 
 #ifndef STS_NET_NO_PACKETS
 int sts_net_refill_packet_data(sts_net_socket_t* socket) {
