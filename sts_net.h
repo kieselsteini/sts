@@ -522,8 +522,9 @@ int sts_net_gethostname(sts_net_socket_t* socket, char* out_host, int out_size, 
 
 #ifndef STS_NET_NO_PACKETS
 int sts_net_refill_packet_data(sts_net_socket_t* socket) {
+  int received;
   if (socket->ready) return 0;
-  int received = sts_net_recv(socket, &socket->data[socket->received], STS_NET_PACKET_SIZE - socket->received);
+  received = sts_net_recv(socket, &socket->data[socket->received], STS_NET_PACKET_SIZE - socket->received);
   if (received < 0) return -1;
   socket->received += received;
   return 1;
