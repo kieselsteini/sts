@@ -143,6 +143,12 @@ int sts_net_remove_socket_from_set(sts_net_socket_t* socket, sts_net_set_t* set)
 //    >0  amount of sockets with activity
 int sts_net_check_socket_set(sts_net_set_t* set, const float timeout);
 
+// Read the connected hostname of a socket into out buffer
+// Supply 1 to want_only_ip if instead of the resolved host name only the ip address is needed
+// out_port can be supplied as NULL if you're not interested in the connected port number
+// Returns the length of what was written into out_host or -1 on error (sets out_host empty string)
+int sts_net_gethostname(sts_net_socket_t* socket, char* out_host, int out_size, int want_only_ip, int* out_port);
+
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -478,6 +484,42 @@ int sts_net_check_socket_set(sts_net_set_t* set, const float timeout) {
 }
 
 
+int sts_net_gethostname(sts_net_socket_t* socket, char* out_host, int out_size, int want_only_ip, int* out_port) {
+  struct sockaddr_in sin;
+  struct in_addr in;
+  struct hostent* hostEntry;
+  char* host;
+  socklen_t sinLength;
+  int addrLen;
+
+  if (out_size) out_host[0] = '\0';
+
+  if (socket->fd == INVALID_SOCKET) {
+    return sts_net__set_error("Cannot get host name of closed socket");
+  }
+
+  sinLength = sizeof(struct sockaddr_in);
+  if (getsockname(socket->fd, (struct sockaddr *)&sin, &sinLength) == -1) {
+    return sts_net__set_error("Error while getting host name of socket");
+  }
+
+  if (out_port) *out_port = sin.sin_port;
+  
+  in.s_addr = sin.sin_addr.s_addr;
+  hostEntry = (want_only_ip ? NULL : gethostbyaddr((char*)&in, sizeof(in), AF_INET));
+  host = (hostEntry ? hostEntry->h_name : inet_ntoa(in));
+  if (host == NULL) {
+    return sts_net__set_error("Error while getting host name of socket");
+  }
+  addrLen = strlen(host);
+  if (addrLen >= out_size) {
+    return sts_net__set_error("Provided buffer is too small for host name");
+  }
+  memcpy(out_host, host, addrLen + 1);
+  return addrLen;
+}
+
+
 #ifndef STS_NET_NO_PACKETS
 int sts_net_refill_packet_data(sts_net_socket_t* socket) {
   if (socket->ready) return 0;
@@ -562,7 +604,8 @@ int main(int argc, char *argv[]) {
         if (clients[i].fd == INVALID_SOCKET) {
           if (sts_net_accept_socket(&server, &clients[i]) < 0) panic(sts_net_get_last_error());
           if (sts_net_add_socket_to_set(&clients[i], &set) < 0) panic(sts_net_get_last_error());
-          puts("Client connected!");
+          sts_net_gethostname(&clients[i], buffer, sizeof(buffer), 1, NULL);
+          printf("Client connected '%s'!\n", buffer);
           break;
         }
       }
