@@ -49,6 +49,9 @@
 #endif // STS_NET_PACKET_SIZE
 #endif // STS_NET_NO_PACKETS
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -179,6 +182,11 @@ int sts_net_receive_packet(sts_net_socket_t* socket);
 // drops the packet after you used it
 void sts_net_drop_packet(sts_net_socket_t* socket);
 #endif // STS_NET_NO_PACKETS
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif // __INCLUDED__STS_NET_H__
 
 
