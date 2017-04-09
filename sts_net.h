@@ -4,6 +4,12 @@
  written 2017 by Sebastian Steinhauer
 
   VERSION HISTORY
+    0.07s (2017-04-07) build warning fixes
+                       split sts_net_open_socket into connect/listen
+                       added sts_net_gethostname
+                       added sts_net_enumerate_interfaces
+                       added sts_net_drop_socket
+                       changed socket set usage (see new example code)
     0.07 (2017-02-24) added checks for a valid socket in every function
                       return 0 for an empty socket set
     0.06 (2017-01-14) fixed warnings when compiling on Windows 64-bit
@@ -324,7 +330,7 @@ void sts_net_shutdown() {
 static int sts_net__resolvehost(struct sockaddr_in* sin, const char* host, int port) {
   sts__memset(sin, 0, sizeof(struct sockaddr_in));
   sin->sin_family = AF_INET;
-  sin->sin_port = htons(port);
+  sin->sin_port = htons((short)port);
   sin->sin_addr.s_addr = (host ? inet_addr(host) : INADDR_ANY);
   if (sin->sin_addr.s_addr == INADDR_NONE) {
       struct hostent *hostent = gethostbyname(host);
@@ -503,7 +509,11 @@ int sts_net_check_socket_set(sts_net_set_t* set, const float timeout) {
   int             i, max_fd, result;
 
   //static assertion to make sure STS_NET_SET_SOCKETS fits into FD_SETSIZE
-  typedef char static_assert_set_size_too_large[(STS_NET_SET_SOCKETS <= FD_SETSIZE)?1:-1];
+  typedef char static_assert_set_size_too_large[(STS_NET_SET_SOCKETS <= FD_SETSIZE)?1:-1]
+  #ifndef _MSC_VER
+  __attribute__((unused))
+  #endif
+  ;
 
   FD_ZERO(&fds);
   for (i = 0, max_fd = 0; i < STS_NET_SET_SOCKETS; ++i) {
@@ -532,8 +542,8 @@ int sts_net_check_socket_set(sts_net_set_t* set, const float timeout) {
       }
         }
   } else if (result == SOCKET_ERROR) {
-    sts_net__set_error("Error on select()");
-      }
+    return sts_net__set_error("Error on select()");
+  }
   return result;
 }
 
@@ -560,7 +570,7 @@ int sts_net_check_socket(sts_net_socket_t* socket, const float timeout) {
   if (result > 0) {
       socket->ready = 1;
   } else if (result == SOCKET_ERROR) {
-    sts_net__set_error("Error on select()");
+    return sts_net__set_error("Error on select()");
   }
   return result;
 }
@@ -593,7 +603,7 @@ int sts_net_gethostname(sts_net_socket_t* socket, char* out_host, int out_size, 
   if (host == NULL) {
     return sts_net__set_error("Error while getting host name of socket");
   }
-  addrLen = strlen(host);
+  addrLen = (int)strlen(host);
   if (addrLen >= out_size) {
     return sts_net__set_error("Provided buffer is too small for host name");
   }
@@ -640,7 +650,7 @@ int sts_net_enumerate_interfaces(sts_net_interfaceinfo_t* table, int tablesize, 
       if (!ifnamelen) ifnamelen = sizeof(table->interface_name) - 1;
 #else
       ifnamelen = strlen(ifa->ifa_name);
-      if (ifnamelen >= sizeof(table->interface_name)) ifnamelen = sizeof(table->interface_name) - 1;
+      if (ifnamelen >= (int)sizeof(table->interface_name)) ifnamelen = sizeof(table->interface_name) - 1;
       sts__memcpy(table->interface_name, ifa->ifa_name, ifnamelen);
 #endif
       table->interface_name[ifnamelen] = '\0';
